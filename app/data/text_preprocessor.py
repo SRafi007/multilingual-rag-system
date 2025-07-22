@@ -21,44 +21,80 @@ class BengaliTextPreprocessor:
         Removes noise characters while keeping valid Bengali, English, numbers, and punctuation.
         """
         # Remove unwanted characters outside Bengali block and basic punctuation
-        cleaned = re.sub(r"[^\u0980-\u09FFa-zA-Z0-9\s.,;:!?()\[\]“”\"\'\n]", "", text)
+        cleaned = re.sub(r"[^\u0980-\u09FFa-zA-Z0-9\s.,;:!?()\\[\]“”\"\'\n]", "", text)
         # Remove repeated punctuation (e.g., "!!", "..")
-        cleaned = re.sub(r"([.,;:!?])\1+", r"\1", cleaned)
+        cleaned = re.sub(r"([.,;:!?])\\1+", r"\\1", cleaned)
         return cleaned
 
     def handle_punctuation(self, text: str) -> str:
         """
         Fix spacing around Bengali/English punctuation marks.
         """
-        text = re.sub(r"\s*([.,;:!?।])\s*", r"\1 ", text)
+        text = re.sub(r"\\s*([.,;:!?।])\\s*", r"\\1 ", text)
         return text.strip()
 
-    def validate_quality(self, text: str, min_len: int = 20) -> bool:
+    def clean_artifacts(self, text: str) -> str:
         """
-        Check if the text chunk is of reasonable quality (non-gibberish).
+        Removes specific PDF/OCR artifacts like page markers and batch IDs.
         """
-        bangla_chars = re.findall(r"[\u0980-\u09FF]", text)
-        return len(text) >= min_len and len(bangla_chars) > 10
+        # Remove explicit page headers (e.g., "--- Page X ---" or "Page X")
+        text = re.sub(r"---?\s*Page\s+\d+\s*---?", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"Page\s+\d+", "", text, flags=re.IGNORECASE)
+
+        # Remove specific batch/ID strings and similar bracketed noise
+        # This regex attempts to catch variations of "কল আললাইন ব্যাচ" followed by numbers
+        text = re.sub(r"\[কল\s*আললাইন\s*ব্যাচ”?\s*\d+\s*\d*\s*\d*?]", "", text)
+        text = re.sub(
+            r"\[লন\s*৯\s*অনলাইন\s*ব্যাচ]", "", text
+        )  # Another specific batch string
+
+        # Remove standalone single digits or specific unwanted symbols if they frequently appear as noise
+        # Be cautious: adjust this based on your actual data. Removing all single digits might remove meaningful ones.
+        # These are examples based on previous analysis of your text:
+        text = re.sub(r"\b[৪১২৬৩৯]\b", "", text)  # Removes standalone Bengali digits
+        text = re.sub(r"[ছ্ট]", "", text)  # Removes 'ছ্ট'
+
+        # Collapse multiple spaces into a single space
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
 
     def preprocess(self, text: str) -> str:
         """
         Complete preprocessing pipeline.
         """
         text = self.normalize_unicode(text)
+        # Apply artifact cleaning early to remove large noise patterns
+        text = self.clean_artifacts(text)
         text = self.remove_unwanted_chars(text)
         text = self.handle_punctuation(text)
+        # Final pass to ensure consistent spacing after all operations
+        text = re.sub(r"\s+", " ", text).strip()
         return text
 
 
 if __name__ == "__main__":
     from pathlib import Path
 
-    sample_path = Path("data/processed/bangla_extracted_text.txt")
-    raw_text = sample_path.read_text(encoding="utf-8")
+    # Define paths
+    input_file_path = Path("data/processed/bangla_extracted_text.txt")
+    output_file_path = Path("data/processed/preprocessed_text.txt")
 
-    preprocessor = BengaliTextPreprocessor()
-    cleaned = preprocessor.preprocess(raw_text)
+    # Ensure input file exists
+    if not input_file_path.exists():
+        print(f"Error: Input file not found at {input_file_path}")
+    else:
+        # Read the extracted text
+        with open(input_file_path, "r", encoding="utf-8") as f:
+            raw_text = f.read()
 
-    Path("data/processed/preprocessed_text.txt").write_text(cleaned, encoding="utf-8")
-    print("[✅] Preprocessed text saved.")
-    print(cleaned[:1000])  # Preview
+        # Initialize preprocessor
+        preprocessor = BengaliTextPreprocessor()
+
+        # Preprocess the text
+        preprocessed_text = preprocessor.preprocess(raw_text)
+
+        # Write the preprocessed text to a new file
+        with open(output_file_path, "w", encoding="utf-8") as f:
+            f.write(preprocessed_text)
+
+        print(f"Preprocessing complete. Output saved to {output_file_path}")
