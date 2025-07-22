@@ -1,20 +1,22 @@
-from app.data.pdf_ocr_processor import BengaliOCRProcessor
+# scripts/pdf_process_documents.py
+
+import sys
 from pathlib import Path
+from app.data.pdf_processor import extract_bangla_text_from_pdf
+
+# Add the project root to sys.path if needed so imports work
+project_root = Path(__file__).parent.parent
+sys.path.append(str(project_root))
 
 
 def main():
-    pdf_path = Path("data/raw/HSC26-Bangla1st-Paper.pdf")
-    output_path = Path("data/processed/ocr_extracted_text.txt")
+    input_pdf = "data/raw/HSC26-Bangla1st-Paper.pdf"
+    output_txt = "data/processed/bangla_extracted_text.txt"
 
-    processor = BengaliOCRProcessor(pdf_path)
-    extracted_text = processor.extract_text()
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(extracted_text)
-
-    print(f"[✅] OCR text saved to {output_path}")
-    print(f"[📄] Preview:\n{extracted_text[:1000]}")
+    print(f"Starting OCR extraction from: {input_pdf}")
+    extracted_text = extract_bangla_text_from_pdf(input_pdf, output_txt)
+    if extracted_text:
+        print("OCR extraction completed successfully.")
 
 
 if __name__ == "__main__":
