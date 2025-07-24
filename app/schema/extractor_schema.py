@@ -11,12 +11,20 @@ class ContentType(Enum):
     """Enumeration of different content types that can be extracted"""
 
     MCQ = "mcq"
-    NARRATIVE = "narrative"
+    SHORT_ANSWER = "short_answer"
+    LEARNING_OUTCOME = "learning_outcome"
     VOCABULARY = "vocabulary"
-    INSTRUCTION = "instruction"
+    NARRATIVE = "narrative"
+    LITERARY_PROSE = "literary_prose"
     POETRY = "poetry"
     DIALOGUE = "dialogue"
+    GRAMMAR = "grammar"
+    MATCHING = "matching"
+    FILL_IN_THE_BLANK = "fill_in_the_blank"
     TABLE = "table"
+    SUMMARY = "summary"
+    COMPREHENSION = "comprehension"
+    INSTRUCTION = "instruction"
     MIXED = "mixed"
 
 
@@ -40,6 +48,25 @@ class VocabularyEntry:
     explanation: Optional[str] = None
     language: str = "bangla"
     pronunciation: Optional[str] = None
+
+
+@dataclass
+class LearningOutcome:
+    """Data model for extracted learning outcomes"""
+
+    outcome: str
+    context: Optional[str] = None
+    language: str = "bangla"
+
+
+@dataclass
+class NarrativeSection:
+    """Data model for narrative or literary prose sections"""
+
+    title: Optional[str]
+    paragraphs: List[str]
+    speaker: Optional[str] = None
+    author: Optional[str] = None
 
 
 @dataclass
@@ -77,6 +104,7 @@ class ProcessingStatistics:
     mcq_questions: int = 0
     vocabulary_entries: int = 0
     narrative_sections: int = 0
+    learning_outcomes: int = 0
     high_confidence_pages: int = 0
     avg_confidence: float = 0.0
     total_pages: int = 0

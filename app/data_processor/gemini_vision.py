@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class GeminiVisionAnalyzer:
     """Handles text extraction and analysis using Google Gemini Vision API"""
 
-    def __init__(self, api_key: str, model_name: str = "gemini-2.0-flash-exp"):
+    def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash"):
         """
         Initialize Gemini Vision analyzer
 
@@ -40,31 +40,56 @@ class GeminiVisionAnalyzer:
         
         Analyze this image and:
         1. Extract ALL text accurately (preserve Bengali script exactly)
-        2. Identify the content type (MCQ, vocabulary, narrative, poetry, etc.)
+        2. Identify the content type from these options: mcq, short_answer, learning_outcome, vocabulary, narrative, literary_prose, poetry, dialogue, grammar, matching, fill_in_the_blank, table, summary, comprehension, instruction, mixed
         3. Detect language (Bengali, English, or mixed)
         4. Structure the content appropriately
         5. For MCQs: identify question numbers, questions, and options (ক, খ, গ, ঘ)
         6. For vocabulary: identify word-meaning pairs
-        7. Rate the text quality and readability (1-100)
+        7. For learning outcomes: identify specific learning objectives
+        8. For narratives/literary prose: identify paragraphs, titles, authors
+        9. For short answers: identify questions and expected answer formats
+        10. For grammar: identify rules, examples, and exercises
+        11. For matching: identify items to be matched
+        12. For fill-in-the-blank: identify sentences with blanks and possible answers
+        13. For comprehension: identify passages and related questions
+        14. Rate the text quality and readability (1-100)
         
         Return response in this JSON format:
         {
             "extracted_text": "complete text from image",
-            "content_type": "mcq|narrative|vocabulary|poetry|dialogue|table|mixed",
+            "content_type": "mcq|short_answer|learning_outcome|vocabulary|narrative|literary_prose|poetry|dialogue|grammar|matching|fill_in_the_blank|table|summary|comprehension|instruction|mixed",
             "language": "bangla|english|mixed",
             "quality_score": 85,
             "structured_content": {
-                "mcqs": [...] or "vocabulary": [...] or "paragraphs": [...]
+                "mcqs": [{"question": "...", "options": {"ক": "...", "খ": "...", "গ": "...", "ঘ": "..."}, "question_number": 1}],
+                "vocabulary": [{"word": "...", "meaning": "...", "language": "bangla"}],
+                "learning_outcomes": [{"outcome": "...", "context": "...", "language": "bangla"}],
+                "narratives": [{"title": "...", "paragraphs": ["...", "..."], "author": "...", "speaker": "..."}],
+                "short_answers": [{"question": "...", "expected_format": "...", "marks": 2}],
+                "grammar_rules": [{"rule": "...", "examples": ["...", "..."], "exercises": ["...", "..."]}],
+                "matching_items": [{"left_items": ["...", "..."], "right_items": ["...", "..."], "instructions": "..."}],
+                "fill_blanks": [{"sentence": "...", "blanks": ["...", "..."], "options": ["...", "...", "..."]}],
+                "comprehension": [{"passage": "...", "questions": [{"question": "...", "type": "mcq|short"}]}],
+                "tables": [{"headers": ["...", "..."], "rows": [["...", "..."]]}],
+                "summaries": [{"title": "...", "content": "...", "key_points": ["...", "..."]}],
+                "instructions": [{"step": 1, "instruction": "...", "details": "..."}]
             },
             "layout_info": {
                 "has_columns": true/false,
                 "has_tables": true/false,
                 "text_regions": [...],
-                "difficulty_level": "easy|medium|hard"
+                "difficulty_level": "easy|medium|hard",
+                "page_structure": "single_column|multi_column|mixed",
+                "has_images": true/false,
+                "has_diagrams": true/false
             }
         }
         
-        IMPORTANT: Preserve Bengali text exactly as shown. Do not transliterate or translate.
+        IMPORTANT: 
+        - Preserve Bengali text exactly as shown. Do not transliterate or translate.
+        - Choose the most appropriate single content type, use 'mixed' only when multiple distinct types are present
+        - For educational content, prioritize identifying learning outcomes when present
+        - Pay attention to question numbering and formatting patterns
         """
 
         return prompt
@@ -85,6 +110,10 @@ class GeminiVisionAnalyzer:
         # Enhance contrast for better text recognition
         enhancer = ImageEnhance.Contrast(pil_image)
         pil_image = enhancer.enhance(1.2)
+
+        # Enhance sharpness for clearer text
+        sharpness_enhancer = ImageEnhance.Sharpness(pil_image)
+        pil_image = sharpness_enhancer.enhance(1.1)
 
         # Ensure image is not too large (Gemini has size limits)
         max_size = 2048
@@ -117,14 +146,15 @@ class GeminiVisionAnalyzer:
             extracted_text, analysis_data = self._parse_gemini_response(response.text)
 
             logger.info(
-                f"Gemini analysis completed - Quality score: {analysis_data.get('quality_score', 'N/A')}"
+                f"Gemini analysis completed - Content type: {analysis_data.get('content_type', 'N/A')}, "
+                f"Quality score: {analysis_data.get('quality_score', 'N/A')}"
             )
 
             return extracted_text, analysis_data
 
         except Exception as e:
             logger.error(f"Gemini vision analysis failed: {e}")
-            return "", {"error": str(e), "quality_score": 0}
+            return "", {"error": str(e), "quality_score": 0, "content_type": "mixed"}
 
     def _parse_gemini_response(self, response_text: str) -> Tuple[str, Dict[str, Any]]:
         """
@@ -148,15 +178,39 @@ class GeminiVisionAnalyzer:
             analysis_data = json.loads(clean_response)
             extracted_text = analysis_data.get("extracted_text", "")
 
-            # Validate content type
+            # Validate content type against new enum values
             content_type_str = analysis_data.get("content_type", "mixed").lower()
-            try:
-                ContentType(content_type_str)
-            except ValueError:
+            valid_content_types = [ct.value for ct in ContentType]
+
+            if content_type_str not in valid_content_types:
                 logger.warning(
-                    f"Invalid content type '{content_type_str}', defaulting to 'mixed'"
+                    f"Invalid content type '{content_type_str}', defaulting to 'mixed'. "
+                    f"Valid types: {valid_content_types}"
                 )
                 analysis_data["content_type"] = "mixed"
+
+            # Ensure structured_content exists
+            if "structured_content" not in analysis_data:
+                analysis_data["structured_content"] = {}
+
+            # Ensure layout_info exists with all expected fields
+            if "layout_info" not in analysis_data:
+                analysis_data["layout_info"] = {}
+
+            # Set default layout_info values if missing
+            layout_defaults = {
+                "has_columns": False,
+                "has_tables": False,
+                "text_regions": [],
+                "difficulty_level": "medium",
+                "page_structure": "single_column",
+                "has_images": False,
+                "has_diagrams": False,
+            }
+
+            for key, default_value in layout_defaults.items():
+                if key not in analysis_data["layout_info"]:
+                    analysis_data["layout_info"][key] = default_value
 
             return extracted_text, analysis_data
 
@@ -173,7 +227,15 @@ class GeminiVisionAnalyzer:
                 "quality_score": 30,
                 "error": "JSON parsing failed",
                 "structured_content": {},
-                "layout_info": {},
+                "layout_info": {
+                    "has_columns": False,
+                    "has_tables": False,
+                    "text_regions": [],
+                    "difficulty_level": "medium",
+                    "page_structure": "single_column",
+                    "has_images": False,
+                    "has_diagrams": False,
+                },
             }
 
             return fallback_text, fallback_data
@@ -197,7 +259,15 @@ class GeminiVisionAnalyzer:
             if line and not line.startswith("{") and not line.startswith("}"):
                 # Remove common JSON artifacts
                 line = line.replace('"extracted_text":', "").replace('"', "").strip()
-                if line and not line.startswith("content_type"):
+                if line and not any(
+                    keyword in line.lower()
+                    for keyword in [
+                        "content_type",
+                        "language",
+                        "quality_score",
+                        "structured_content",
+                    ]
+                ):
                     text_lines.append(line)
 
         return " ".join(text_lines[:10])  # Take first 10 relevant lines
@@ -224,3 +294,62 @@ class GeminiVisionAnalyzer:
     def get_supported_content_types(self) -> list:
         """Get list of supported content types"""
         return [content_type.value for content_type in ContentType]
+
+    def validate_structured_content(
+        self, analysis_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Validate and clean structured content based on content type
+
+        Args:
+            analysis_data: Raw analysis data from Gemini
+
+        Returns:
+            Validated and cleaned analysis data
+        """
+        content_type = analysis_data.get("content_type", "mixed")
+        structured_content = analysis_data.get("structured_content", {})
+
+        # Content type specific validation
+        if content_type == "mcq":
+            if "mcqs" in structured_content:
+                # Validate MCQ structure
+                valid_mcqs = []
+                for mcq in structured_content["mcqs"]:
+                    if isinstance(mcq, dict) and "question" in mcq and "options" in mcq:
+                        valid_mcqs.append(mcq)
+                structured_content["mcqs"] = valid_mcqs
+
+        elif content_type == "vocabulary":
+            if "vocabulary" in structured_content:
+                # Validate vocabulary entries
+                valid_vocab = []
+                for entry in structured_content["vocabulary"]:
+                    if (
+                        isinstance(entry, dict)
+                        and "word" in entry
+                        and "meaning" in entry
+                    ):
+                        valid_vocab.append(entry)
+                structured_content["vocabulary"] = valid_vocab
+
+        elif content_type == "learning_outcome":
+            if "learning_outcomes" in structured_content:
+                # Validate learning outcomes
+                valid_outcomes = []
+                for outcome in structured_content["learning_outcomes"]:
+                    if isinstance(outcome, dict) and "outcome" in outcome:
+                        valid_outcomes.append(outcome)
+                structured_content["learning_outcomes"] = valid_outcomes
+
+        elif content_type in ["narrative", "literary_prose"]:
+            if "narratives" in structured_content:
+                # Validate narrative structure
+                valid_narratives = []
+                for narrative in structured_content["narratives"]:
+                    if isinstance(narrative, dict) and "paragraphs" in narrative:
+                        valid_narratives.append(narrative)
+                structured_content["narratives"] = valid_narratives
+
+        analysis_data["structured_content"] = structured_content
+        return analysis_data

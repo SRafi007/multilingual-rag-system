@@ -44,7 +44,7 @@ def main():
         print_processing_summary(results)
         demonstrate_analysis_methods(pipeline)
 
-        output_path = Path(OUTPUT_DIR) / "ocr_gemini_results.json"
+        output_path = Path(OUTPUT_DIR) / "extracted_data.json"
         pipeline.export_results(str(output_path))
 
         embedding_data = pipeline.get_embedding_data()
@@ -61,41 +61,46 @@ def print_processing_summary(results: dict):
 
     stats = results["statistics"]
 
-    print("\n" + "=" * 50)
+    print("\n" + "=" * 60)
     print("PROCESSING SUMMARY")
-    print("=" * 50)
+    print("=" * 60)
     print(f"📄 Total pages processed: {results['total_pages']}")
     print(f"🎯 Average confidence: {stats.avg_confidence:.1f}%")
     print(f"✅ High confidence pages: {stats.high_confidence_pages}")
     print(f"❓ MCQ questions found: {stats.mcq_questions}")
     print(f"📚 Vocabulary entries: {stats.vocabulary_entries}")
     print(f"📖 Narrative sections: {stats.narrative_sections}")
-    print("=" * 50)
+    print(f"🎓 Learning outcomes: {stats.learning_outcomes}")
+    print("=" * 60)
 
 
 def demonstrate_analysis_methods(pipeline: OCRGeminiPipeline):
     """Demonstrate various analysis methods available in the pipeline"""
 
-    print("\n" + "=" * 50)
-    print("CONTENT ANALYSIS")
-    print("=" * 50)
+    print("\n" + "=" * 60)
+    print("CONTENT ANALYSIS BY TYPE")
+    print("=" * 60)
 
-    # Get pages by content type
-    mcq_pages = pipeline.get_pages_by_content_type(ContentType.MCQ)
-    vocab_pages = pipeline.get_pages_by_content_type(ContentType.VOCABULARY)
-    narrative_pages = pipeline.get_pages_by_content_type(ContentType.NARRATIVE)
+    # Get pages by all content types
+    content_type_counts = {}
 
-    print(f"📝 MCQ pages: {len(mcq_pages)}")
-    print(f"📖 Vocabulary pages: {len(vocab_pages)}")
-    print(f"📰 Narrative pages: {len(narrative_pages)}")
+    for content_type in ContentType:
+        pages = pipeline.get_pages_by_content_type(content_type)
+        if pages:
+            content_type_counts[content_type.value] = len(pages)
 
     # Show high confidence pages
     high_conf_pages = pipeline.get_high_confidence_pages(threshold=80.0)
-    print(f"⭐ High confidence pages (>80%): {len(high_conf_pages)}")
+    print(f"\n⭐ High confidence pages (>80%): {len(high_conf_pages)}")
 
-    # Demonstrate text search
-    search_results = pipeline.search_text_in_pages("প্রশ্ন", case_sensitive=False)
-    print(f"🔍 Pages containing 'প্রশ্ন': {len(search_results)}")
+    # Demonstrate text search with Bengali keywords
+    search_keywords = ["প্রশ্ন", "উত্তর", "শব্দার্থ", "ব্যাকরণ"]
+    print(f"\n🔍 Text Search Results:")
+
+    for keyword in search_keywords:
+        search_results = pipeline.search_text_in_pages(keyword, case_sensitive=False)
+        if search_results:
+            print(f"   '{keyword}': {len(search_results)} pages")
 
     # Show sample content from first page
     if pipeline.processed_pages:
@@ -104,7 +109,6 @@ def demonstrate_analysis_methods(pipeline: OCRGeminiPipeline):
         print(f"   Type: {first_page.content_type.value}")
         print(f"   Language: {first_page.language}")
         print(f"   Confidence: {first_page.confidence_score:.1f}%")
-        print(f"   Text preview: {first_page.cleaned_text[:100]}...")
 
         if first_page.title:
             print(f"   Title: {first_page.title}")

@@ -219,7 +219,7 @@ class OCRGeminiPipeline:
         """
         gemini_analysis = combined_results["gemini_analysis"]
 
-        # Determine content type
+        # Determine content type with expanded enum support
         content_type_str = gemini_analysis.get("content_type", "mixed")
         try:
             content_type = ContentType(content_type_str.lower())
@@ -260,7 +260,7 @@ class OCRGeminiPipeline:
         self, text: str, content_type: ContentType, structured_data: Dict
     ) -> str:
         """
-        Create optimized text for embedding
+        Create optimized text for embedding with support for all content types
 
         Args:
             text: Source text
@@ -290,7 +290,122 @@ class OCRGeminiPipeline:
                 vocab_texts.append(f"{word}: {meaning}")
             return " ".join(vocab_texts)[:2000]
 
-        # Clean text for embedding
+        elif (
+            content_type == ContentType.LEARNING_OUTCOME
+            and "learning_outcomes" in structured_data
+        ):
+            # Create searchable learning outcome text
+            outcome_texts = []
+            for outcome in structured_data["learning_outcomes"]:
+                outcome_text = outcome.get("outcome", "")
+                context = outcome.get("context", "")
+                outcome_texts.append(f"শিক্ষণীয় উদ্দেশ্য: {outcome_text} {context}")
+            return " ".join(outcome_texts)[:2000]
+
+        elif (
+            content_type == ContentType.SHORT_ANSWER and "questions" in structured_data
+        ):
+            # Create searchable short answer text
+            qa_texts = []
+            for qa in structured_data["questions"]:
+                question = qa.get("question", "")
+                answer = qa.get("answer", "")
+                qa_texts.append(f"প্রশ্ন: {question} উত্তর: {answer}")
+            return " ".join(qa_texts)[:2000]
+
+        elif content_type == ContentType.GRAMMAR and "grammar_rules" in structured_data:
+            # Create searchable grammar text
+            grammar_texts = []
+            for rule in structured_data["grammar_rules"]:
+                rule_text = rule.get("rule", "")
+                example = rule.get("example", "")
+                grammar_texts.append(f"ব্যাকরণ: {rule_text} উদাহরণ: {example}")
+            return " ".join(grammar_texts)[:2000]
+
+        elif (
+            content_type == ContentType.MATCHING and "matching_pairs" in structured_data
+        ):
+            # Create searchable matching text
+            match_texts = []
+            for pair in structured_data["matching_pairs"]:
+                left = pair.get("left", "")
+                right = pair.get("right", "")
+                match_texts.append(f"{left} - {right}")
+            return " ".join(match_texts)[:2000]
+
+        elif (
+            content_type == ContentType.FILL_IN_THE_BLANK
+            and "blanks" in structured_data
+        ):
+            # Create searchable fill-in-the-blank text
+            blank_texts = []
+            for blank in structured_data["blanks"]:
+                sentence = blank.get("sentence", "")
+                answer = blank.get("answer", "")
+                blank_texts.append(f"শূন্যস্থান: {sentence} উত্তর: {answer}")
+            return " ".join(blank_texts)[:2000]
+
+        elif (
+            content_type == ContentType.COMPREHENSION and "passages" in structured_data
+        ):
+            # Create searchable comprehension text
+            comp_texts = []
+            for passage in structured_data["passages"]:
+                passage_text = passage.get("text", "")
+                questions = passage.get("questions", [])
+                question_text = " ".join([q.get("question", "") for q in questions])
+                comp_texts.append(f"অনুচ্ছেদ: {passage_text} প্রশ্ন: {question_text}")
+            return " ".join(comp_texts)[:2000]
+
+        elif (
+            content_type in [ContentType.LITERARY_PROSE, ContentType.NARRATIVE]
+            and "narrative" in structured_data
+        ):
+            # Create searchable narrative text
+            narrative = structured_data["narrative"]
+            title = narrative.get("title", "")
+            author = narrative.get("author", "")
+            paragraphs = " ".join(narrative.get("paragraphs", []))
+            return f"শিরোনাম: {title} লেখক: {author} বিষয়বস্তু: {paragraphs}"[:2000]
+
+        elif content_type == ContentType.POETRY and "poems" in structured_data:
+            # Create searchable poetry text
+            poem_texts = []
+            for poem in structured_data["poems"]:
+                title = poem.get("title", "")
+                author = poem.get("author", "")
+                lines = " ".join(poem.get("lines", []))
+                poem_texts.append(f"কবিতা: {title} কবি: {author} পঙক্তি: {lines}")
+            return " ".join(poem_texts)[:2000]
+
+        elif content_type == ContentType.DIALOGUE and "dialogues" in structured_data:
+            # Create searchable dialogue text
+            dialogue_texts = []
+            for dialogue in structured_data["dialogues"]:
+                speakers = dialogue.get("speakers", [])
+                exchanges = dialogue.get("exchanges", [])
+                speaker_text = " ".join(speakers)
+                exchange_text = " ".join([ex.get("text", "") for ex in exchanges])
+                dialogue_texts.append(f"কথোপকথন: {speaker_text} {exchange_text}")
+            return " ".join(dialogue_texts)[:2000]
+
+        elif content_type == ContentType.SUMMARY and "summary" in structured_data:
+            # Create searchable summary text
+            summary = structured_data["summary"]
+            main_points = summary.get("main_points", [])
+            conclusion = summary.get("conclusion", "")
+            return f"মূল বিষয়: {' '.join(main_points)} উপসংহার: {conclusion}"[:2000]
+
+        elif content_type == ContentType.TABLE and "table_data" in structured_data:
+            # Create searchable table text
+            table = structured_data["table_data"]
+            headers = " ".join(table.get("headers", []))
+            rows = []
+            for row in table.get("rows", []):
+                rows.append(" ".join(str(cell) for cell in row))
+            return f"সারণী শিরোনাম: {headers} তথ্য: {' '.join(rows)}"[:2000]
+
+        # Clean text for embedding (fallback for other content types)
         clean_text = re.sub(r"\s+", " ", text.strip())
         return clean_text[:2000]
 
@@ -385,7 +500,7 @@ class OCRGeminiPipeline:
         self, stats: ProcessingStatistics, content: ExtractedContent
     ):
         """
-        Update processing statistics
+        Update processing statistics with support for all content types
 
         Args:
             stats: Statistics object to update
@@ -396,15 +511,23 @@ class OCRGeminiPipeline:
         if content.confidence_score > 80:
             stats.high_confidence_pages += 1
 
-        # Count content types
+        # Count content types based on structured data
+        structured_data = content.structured_data or {}
+
         if content.content_type == ContentType.MCQ:
-            mcq_count = len(content.structured_data.get("mcqs", []))
+            mcq_count = len(structured_data.get("mcqs", []))
             stats.mcq_questions += mcq_count
         elif content.content_type == ContentType.VOCABULARY:
-            vocab_count = len(content.structured_data.get("vocabulary", []))
+            vocab_count = len(structured_data.get("vocabulary", []))
             stats.vocabulary_entries += vocab_count
-        elif content.content_type == ContentType.NARRATIVE:
+        elif content.content_type in [
+            ContentType.NARRATIVE,
+            ContentType.LITERARY_PROSE,
+        ]:
             stats.narrative_sections += 1
+        elif content.content_type == ContentType.LEARNING_OUTCOME:
+            outcome_count = len(structured_data.get("learning_outcomes", []))
+            stats.learning_outcomes += outcome_count
 
     def _finalize_statistics(self, stats: ProcessingStatistics, total_pages: int):
         """
@@ -537,3 +660,58 @@ class OCRGeminiPipeline:
                 matching_pages.append(page)
 
         return matching_pages
+
+    def get_content_type_statistics(self) -> Dict[str, int]:
+        """
+        Get statistics for each content type
+
+        Returns:
+            Dictionary with content type counts
+        """
+        content_stats = {}
+        for content_type in ContentType:
+            count = len(self.get_pages_by_content_type(content_type))
+            if count > 0:
+                content_stats[content_type.value] = count
+        return content_stats
+
+    def get_pages_by_language(self, language: str) -> List[ExtractedContent]:
+        """
+        Get pages filtered by language
+
+        Args:
+            language: Language to filter by
+
+        Returns:
+            List of matching ExtractedContent objects
+        """
+        return [
+            page
+            for page in self.processed_pages
+            if page.language.lower() == language.lower()
+        ]
+
+    def get_structured_content_by_type(
+        self, content_type: ContentType
+    ) -> List[Dict[str, Any]]:
+        """
+        Get structured content for a specific content type
+
+        Args:
+            content_type: Content type to extract structured data for
+
+        Returns:
+            List of structured data dictionaries
+        """
+        structured_content = []
+        for page in self.get_pages_by_content_type(content_type):
+            if page.structured_data:
+                structured_content.append(
+                    {
+                        "page_number": page.page_number,
+                        "title": page.title,
+                        "confidence_score": page.confidence_score,
+                        "structured_data": page.structured_data,
+                    }
+                )
+        return structured_content
