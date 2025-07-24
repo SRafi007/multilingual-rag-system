@@ -1,0 +1,52 @@
+{
+  "content_type": "mcq_with_answers",
+  "total_items": 3,
+  "items": [
+    {
+      "question_number": 1,
+      "question": "অনুপমের বাবা কী করে জীবিকা নির্বাহ করতেন?",
+      "options": {
+        "ক": "ডাক্তারি",
+        "খ": "ওকালতি",
+        "গ": "মাস্টারি",
+        "ঘ": "ব্যবসা"
+      },
+      "correct_option": "খ",
+      "page_number": 20,
+      "correct_answer": "খ",
+      "answer_source_page": 2
+    },
+    {
+      "question_number": 2,
+      "question": "মামাকে ভাগ্য দেবতার প্রধান এজেন্ট বলার কারণ, তার-",
+      "options": {
+        "ক": "প্রতিপত্তি",
+        "খ": "প্রভাব",
+        "গ": "বিচক্ষণতা",
+        "ঘ": "কূট বুদ্ধি"
+      },
+      "correct_option": "খ",
+      "page_number": 20,
+      "correct_answer": "গ",
+      "answer_source_page": 2
+    },
+    {
+      "question_number": 3,
+      "question": "দীপুরের চাচার সঙ্গে 'অপরিচিতা' গল্পের কোন চরিত্রের মিল আছে?",
+      "options": {
+        "ক": "হরিশের",
+        "খ": "মামার",
+        "গ": "শিক্ষকের",
+        "ঘ": "বিনুর"
+      },
+      "correct_option": "খ",
+      "page_number": 20,
+      "correct_answer": "খ",
+      "answer_source_page": 2
+    }
+  ],
+  "metadata": {
+    "processed_at": "1753307717.1882699",
+    "source_file": "data/processed/extracted_data.json"
+  }
+}

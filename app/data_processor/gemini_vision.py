@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class GeminiVisionAnalyzer:
     """Handles text extraction and analysis using Google Gemini Vision API"""
 
-    def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str, model_name: str = "gemini-2.0-flash"):
         """
         Initialize Gemini Vision analyzer
 
@@ -46,13 +46,16 @@ class GeminiVisionAnalyzer:
         5. For MCQs: identify question numbers, questions, and options (ক, খ, গ, ঘ)
         6. For vocabulary: identify word-meaning pairs
         7. For learning outcomes: identify specific learning objectives
-        8. For narratives/literary prose: identify paragraphs, titles, authors
+        8. For narratives/literary prose: identify paragraphs
         9. For short answers: identify questions and expected answer formats
         10. For grammar: identify rules, examples, and exercises
         11. For matching: identify items to be matched
         12. For fill-in-the-blank: identify sentences with blanks and possible answers
         13. For comprehension: identify passages and related questions
         14. Rate the text quality and readability (1-100)
+        15. For MCQs: if the correct answer is given write it.
+        16. For MCQs: answer is not given look for this type of pattern SL Ans ১ খ ২ গ ৩ খ and match the question number with this.
+        17. For MCqs: assign the correct question number, check it again.
         
         Return response in this JSON format:
         {
@@ -61,11 +64,11 @@ class GeminiVisionAnalyzer:
             "language": "bangla|english|mixed",
             "quality_score": 85,
             "structured_content": {
-                "mcqs": [{"question": "...", "options": {"ক": "...", "খ": "...", "গ": "...", "ঘ": "..."}, "question_number": 1}],
+                "mcqs": [{ "question_number": n, "question": "...", "options": {"ক": "...", "খ": "...", "গ": "...", "ঘ": "..."},"answer":"null/ক"}],
                 "vocabulary": [{"word": "...", "meaning": "...", "language": "bangla"}],
-                "learning_outcomes": [{"outcome": "...", "context": "...", "language": "bangla"}],
-                "narratives": [{"title": "...", "paragraphs": ["...", "..."], "author": "...", "speaker": "..."}],
-                "short_answers": [{"question": "...", "expected_format": "...", "marks": 2}],
+                "learning_outcomes": [{"outcome": "...","language": "bangla"}],
+                "narratives": [{"title": "...", "paragraphs": ["...", "..."]}],
+                "short_answers": [{"question": "...", "expected_format": "..."}],
                 "grammar_rules": [{"rule": "...", "examples": ["...", "..."], "exercises": ["...", "..."]}],
                 "matching_items": [{"left_items": ["...", "..."], "right_items": ["...", "..."], "instructions": "..."}],
                 "fill_blanks": [{"sentence": "...", "blanks": ["...", "..."], "options": ["...", "...", "..."]}],
