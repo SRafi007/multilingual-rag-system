@@ -1,4 +1,4 @@
-"setting.py"
+"/app/config/setting.py"
 
 import os
 from pathlib import Path
@@ -12,12 +12,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # === Environment Variables ===
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY_BACKUP = os.getenv("GEMINI_API_KEY_BACKUP")
+
 TESSERACT_PATH = os.getenv("TESSERACT_PATH")
 TESSDATA_PATH = os.getenv("TESSDATA_PATH")
 
 # === Static Configs (non-sensitive) ===
-PDF_PATH = BASE_DIR / "data" / "raw" / "HSC26-Bangla1st-Paper.pdf"
-OUTPUT_DIR = BASE_DIR / "data" / "processed"
+PDF_PATH = Path("data") / "raw" / "HSC26-Bangla1st-Paper.pdf"
+OUTPUT_DIR = Path("data") / "processed"
 
 # === Validations ===
 if not GEMINI_API_KEY:

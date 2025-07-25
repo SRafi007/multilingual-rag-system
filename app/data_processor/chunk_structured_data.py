@@ -7,6 +7,11 @@ from pathlib import Path
 import time
 import os
 from dotenv import load_dotenv
+from app.config.settings import (
+    GEMINI_API_KEY,
+    GEMINI_API_KEY_BACKUP,
+    OUTPUT_DIR,
+)
 
 # Load environment variables
 load_dotenv()
@@ -19,33 +24,32 @@ logger = logging.getLogger(__name__)
 
 
 class EducationalContentProcessor:
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(
+        self, api_key: Optional[str] = None, backup_api_key: Optional[str] = None
+    ):
         """
-        Initialize the processor with Gemini API key
-
-        Args:
-            api_key (str, optional): Your Gemini API key. If not provided, will try to get from environment
+        Initialize Gemini processor with primary and optional backup API key.
         """
-        if api_key is None:
-            api_key = os.getenv("GEMINI_API_KEY")
-            if not api_key:
-                raise ValueError(
-                    "GEMINI_API_KEY not found in environment variables or provided as parameter"
-                )
+        self.api_key = GEMINI_API_KEY_BACKUP
+        self.backup_api_key = GEMINI_API_KEY
 
-        genai.configure(api_key=api_key)
+        if not self.api_key:
+            raise ValueError("Primary GEMINI_API_KEY is required")
 
-        # Use more specific model configuration for better JSON output
-        generation_config = {
-            "temperature": 0.1,  # Lower temperature for more consistent output
-            "top_p": 0.8,
-            "top_k": 20,
-            "max_output_tokens": 8192,
-        }
-
-        self.model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash", generation_config=generation_config
+        # Initialize primary model
+        genai.configure(api_key=self.api_key)
+        self.primary_model = genai.GenerativeModel(
+            model_name="gemini-2.5-flash",
+            generation_config={
+                "temperature": 0.1,
+                "top_p": 0.8,
+                "top_k": 20,
+                "max_output_tokens": 8192,
+            },
         )
+
+        # Backup model will be initialized on-demand when needed
+        self.backup_model = None
 
     def clean_json_response(self, response_text: str) -> str:
         """
@@ -169,6 +173,20 @@ class EducationalContentProcessor:
 
         return cleaned_text
 
+    def _try_generate(
+        self, model, prompt: str, max_retries=3, base_delay=1
+    ) -> Optional[str]:
+        for attempt in range(max_retries):
+            try:
+                response = model.generate_content(prompt)
+                if response and response.text.strip():
+                    return response.text.strip()
+                logger.warning(f"Empty response (attempt {attempt + 1})")
+            except Exception as e:
+                logger.warning(f"API call failed (attempt {attempt + 1}): {e}")
+            time.sleep(base_delay * (2**attempt))
+        return None
+
     def create_prompt(self, structured_data: Dict[str, Any]) -> str:
         """
         Create a detailed prompt for Gemini API
@@ -184,9 +202,10 @@ class EducationalContentProcessor:
 IMPORTANT INSTRUCTIONS:
 1. Return ONLY a valid JSON array, no additional text, explanations, or markdown formatting
 2. Each chunk must have "content_type" as the first key
-3. For MCQs, use this exact format: {{"content_type": "mcq", "question": "...", "options": {{}}, "correct_answer": "..."}}
+3. For MCQs, use this exact format: {{"content_type": "mcq","question_number":"n", "question": "...", "options": {{}}, "correct_answer": "..."}}
 4. For other content types, use: {{"content_type": "content_type_name", "content": "..."}}
 5. Remove any noise text like promotional content, phone numbers, or course advertisements
+6. Identify if the content is or not educational content
 
 CONTENT TYPES TO RECOGNIZE:
 - mcq: Multiple Choice Questions
@@ -209,75 +228,53 @@ OUTPUT (JSON array only):"""
     def process_structured_data(
         self, structured_data: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
-        """
-        Process structured data using Gemini API with retry logic
+        prompt = self.create_prompt(structured_data)
 
-        Args:
-            structured_data (Dict): The structured_data portion from your JSON
+        # Try primary model first
+        response_text = self._try_generate(self.primary_model, prompt)
 
-        Returns:
-            List[Dict]: List of processed chunks
-        """
-        max_retries = 3
-        base_delay = 1
+        # If primary fails and backup API key is available
+        if not response_text and self.backup_api_key:
+            logger.warning("Primary model failed. Switching to backup API key...")
 
-        for attempt in range(max_retries):
             try:
-                # Create prompt
-                prompt = self.create_prompt(structured_data)
-
-                # Generate response with retry
-                try:
-                    response = self.model.generate_content(prompt)
-                    response_text = response.text.strip()
-                except Exception as api_error:
-                    logger.warning(
-                        f"API call failed (attempt {attempt + 1}): {api_error}"
+                genai.configure(api_key=self.backup_api_key)
+                if not self.backup_model:
+                    self.backup_model = genai.GenerativeModel(
+                        model_name="gemini-2.0-pro",  # Or same model if needed
+                        generation_config={
+                            "temperature": 0.1,
+                            "top_p": 0.8,
+                            "top_k": 20,
+                            "max_output_tokens": 8192,
+                        },
                     )
-                    if attempt < max_retries - 1:
-                        time.sleep(base_delay * (2**attempt))
-                        continue
-                    else:
-                        raise api_error
+                response_text = self._try_generate(self.backup_model, prompt)
+            except Exception as backup_err:
+                logger.error(
+                    f"Backup model failed to initialize or generate: {backup_err}"
+                )
 
-                if not response_text:
-                    logger.warning(f"Empty response received (attempt {attempt + 1})")
-                    if attempt < max_retries - 1:
-                        time.sleep(base_delay * (2**attempt))
-                        continue
-                    else:
-                        return []
+        if not response_text:
+            logger.error("All model attempts failed.")
+            return []
 
-                # Clean and parse JSON
-                cleaned_json = self.clean_json_response(response_text)
-                chunks = self.validate_and_fix_json(cleaned_json)
+        try:
+            cleaned_json = self.clean_json_response(response_text)
+            chunks = self.validate_and_fix_json(cleaned_json)
 
-                if chunks:
-                    # Clean content in chunks
-                    for chunk in chunks:
-                        if "content" in chunk:
-                            chunk["content"] = self.remove_noise(chunk["content"])
-                        if "question" in chunk:
-                            chunk["question"] = self.remove_noise(chunk["question"])
+            for chunk in chunks:
+                if "content" in chunk:
+                    chunk["content"] = self.remove_noise(chunk["content"])
+                if "question" in chunk:
+                    chunk["question"] = self.remove_noise(chunk["question"])
 
-                    logger.info(f"Successfully processed {len(chunks)} chunks")
-                    return chunks
-                else:
-                    logger.warning(f"No valid chunks extracted (attempt {attempt + 1})")
-                    if attempt < max_retries - 1:
-                        time.sleep(base_delay * (2**attempt))
-                        continue
+            logger.info(f"Successfully processed {len(chunks)} chunks")
+            return chunks
 
-            except Exception as e:
-                logger.error(f"Error in attempt {attempt + 1}: {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(base_delay * (2**attempt))
-                    continue
-                else:
-                    logger.error(f"All attempts failed for structured data processing")
-                    return []
-
-        return []  # Return empty list if all attempts failed
+        except Exception as e:
+            logger.error(f"Failed to clean/process response: {e}")
+            return []
 
     def fallback_processing(
         self, structured_data: Dict[str, Any]
@@ -309,6 +306,9 @@ OUTPUT (JSON array only):"""
                 for mcq in structured_data["mcqs"]:
                     chunk = {
                         "content_type": "mcq",
+                        "question_number": mcq.get(
+                            "question_number", 1
+                        ),  # Add this line
                         "question": self.remove_noise(mcq.get("question", "")),
                         "options": mcq.get("options", {}),
                         "correct_answer": mcq.get(
@@ -406,9 +406,7 @@ OUTPUT (JSON array only):"""
         for chunk in chunks:
             chunk["page_number"] = page_data.get("page_number")
             chunk["language"] = page_data.get("language")
-            chunk["quality_score"] = page_data.get(
-                "quality_score", page_data.get("confidence_score")
-            )
+        #  chunk["quality_score"] = page_data.get( "quality_score", page_data.get("confidence_score"))
 
         return chunks
 
@@ -494,7 +492,7 @@ def main():
 
         # Define file paths - adjust these to your actual paths
         input_file = "data/processed/extracted_data.json"  # Your input JSON file
-        output_file = "data/processed_chunks.json"  # Output file
+        output_file = "data/processed/chunk_structured_data.json"  # Output file
 
         # Check if input file exists
         if not os.path.exists(input_file):
@@ -506,7 +504,7 @@ def main():
         processor.process_json_file(
             input_file_path=input_file,
             output_file_path=output_file,
-            delay_between_pages=1.5,  # 1.5 seconds delay between pages
+            delay_between_pages=6,  # 1.5 seconds delay between pages
         )
 
     except Exception as e:

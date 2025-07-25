@@ -7,7 +7,7 @@ from pathlib import Path
 
 from app.data_processor.pdf_processor import OCRGeminiPipeline
 from app.schema.extractor_schema import ContentType
-from app.settings import (
+from app.config.settings import (
     GEMINI_API_KEY,
     TESSERACT_PATH,
     TESSDATA_PATH,

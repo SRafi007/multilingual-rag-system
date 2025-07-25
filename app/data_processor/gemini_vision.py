@@ -8,17 +8,35 @@ from PIL import Image, ImageEnhance
 import json
 import logging
 from typing import Dict, Any, Tuple
-
+import re
 from app.schema.extractor_schema import ContentType
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 
+def _normalize_quotes(text: str) -> str:
+    # Fix curly quotes
+    text = text.replace("“", '"').replace("”", '"')
+    text = text.replace("‘", "'").replace("’", "'")
+
+    # Remove illegal commas like: "আমি দুঃখিত, , কিন্তু"
+    text = re.sub(r",\s*,+", ",", text)
+
+    # Remove broken words with extra newlines or multiple spaces (Gemini hallucination)
+    text = re.sub(r"([^\s])\s{2,}([^\s])", r"\1 \2", text)  # Fix over-spaced words
+    text = re.sub(r'"\s*\n\s*', '"', text)  # Fix line breaks inside string literals
+
+    # Ensure no trailing commas before closing braces/brackets
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+
+    return text
+
+
 class GeminiVisionAnalyzer:
     """Handles text extraction and analysis using Google Gemini Vision API"""
 
-    def __init__(self, api_key: str, model_name: str = "gemini-2.0-flash"):
+    def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash"):
         """
         Initialize Gemini Vision analyzer
 
@@ -28,6 +46,7 @@ class GeminiVisionAnalyzer:
         """
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel(model_name)
+
         self.api_key = api_key
 
         logger.info(f"Initialized Gemini Vision with model: {model_name}")
@@ -142,18 +161,30 @@ class GeminiVisionAnalyzer:
             # Create analysis prompt
             prompt = self._create_analysis_prompt()
 
-            # Generate content using Gemini Vision
-            response = self.model.generate_content([prompt, enhanced_image])
+            for attempt in range(2):  # Retry up to 2 times
+                try:
+                    # Generate content using Gemini Vision
+                    response = self.model.generate_content([prompt, enhanced_image])
 
-            # Parse response
-            extracted_text, analysis_data = self._parse_gemini_response(response.text)
+                    # Parse response
+                    extracted_text, analysis_data = self._parse_gemini_response(
+                        response.text
+                    )
 
-            logger.info(
-                f"Gemini analysis completed - Content type: {analysis_data.get('content_type', 'N/A')}, "
-                f"Quality score: {analysis_data.get('quality_score', 'N/A')}"
-            )
+                    logger.info(
+                        f"Gemini analysis completed - Attempt {attempt + 1} - "
+                        f"Content type: {analysis_data.get('content_type', 'N/A')}, "
+                        f"Quality score: {analysis_data.get('quality_score', 'N/A')}"
+                    )
 
-            return extracted_text, analysis_data
+                    return extracted_text, analysis_data
+
+                except json.JSONDecodeError as parse_error:
+                    logger.warning(
+                        f"JSON parsing failed on attempt {attempt + 1}: {parse_error}"
+                    )
+                    if attempt == 1:
+                        raise  # Rethrow after final attempt
 
         except Exception as e:
             logger.error(f"Gemini vision analysis failed: {e}")
@@ -177,8 +208,20 @@ class GeminiVisionAnalyzer:
                     clean_response.replace("```json", "").replace("```", "").strip()
                 )
 
+            # Normalize curly quotes
+            clean_response = _normalize_quotes(clean_response)
+
             # Parse JSON
-            analysis_data = json.loads(clean_response)
+            try:
+                analysis_data = json.loads(clean_response)
+            except json.JSONDecodeError as e:
+                logger.error(
+                    f"Failed to parse Gemini JSON response at pos {e.pos}: {e}"
+                )
+                logger.error(
+                    f"Snippet around error: {clean_response[e.pos-50:e.pos+50]}"
+                )
+                raise
             extracted_text = analysis_data.get("extracted_text", "")
 
             # Validate content type against new enum values
@@ -219,7 +262,10 @@ class GeminiVisionAnalyzer:
 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse Gemini JSON response: {e}")
-            logger.debug(f"Raw response: {response_text[:500]}...")
+            # logger.debug(f"Raw response: {response_text[:500]}...")
+            logger.error(
+                f"Full Gemini response text:\n{response_text}"
+            )  # just for testing
 
             # Fallback: extract text manually
             fallback_text = self._extract_text_fallback(response_text)

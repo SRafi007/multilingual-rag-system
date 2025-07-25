@@ -705,7 +705,7 @@ async def main():
     # Process the JSON file
     await processor.process_json_file(
         json_file_path="data/processed/extracted_data.json",
-        output_dir="processed_knowledge_base",
+        output_dir="data/processed",
     )
 
 
