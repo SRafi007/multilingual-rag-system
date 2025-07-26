@@ -1,75 +1,86 @@
-# preprocessing.py
+# preprocessing_normalization.py
 
+import os
 import re
-from pathlib import Path
+import unicodedata
+from indicnlp.tokenize import indic_tokenize
+from indicnlp.normalize.indic_normalize import IndicNormalizerFactory
+
+# === Setup for Bengali ===
+factory = IndicNormalizerFactory()
+normalizer = factory.get_normalizer("bn")
+
+INPUT_DIR = "app/data/output"
+OUTPUT_DIR = "app/data/normalized"
+
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# === Normalization ===
 
 
-def normalize_bangla_text(text: str) -> str:
-    """
-    Normalize Bangla text by standardizing punctuation, whitespace, and common OCR errors.
-    """
-    # Standardize Bangla punctuation
-    text = text.replace("“", '"').replace("”", '"')
-    text = text.replace("‘", "'").replace("’", "'")
-    text = text.replace("—", "-").replace("–", "-")
-    text = text.replace("…", "...")
+def load_text_file(filepath):
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        print(f"❌ File not found: {filepath}")
+        return None
 
-    # Normalize extra whitespace
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n+", "\n", text)
-    text = re.sub(r" +\n", "\n", text)
-    text = re.sub(r"\n +", "\n", text)
-    text = text.strip()
 
-    # Remove duplicate punctuation
-    text = re.sub(r"[।]{2,}", "।", text)
-    text = re.sub(r"[!]{2,}", "!", text)
-    text = re.sub(r"[?]{2,}", "?", text)
+def save_text_file(filepath, text):
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(text)
 
-    # Remove artifacts like broken Unicode (if OCR was noisy)
-    text = re.sub(r"[^\u0980-\u09FF\s.,!?\"'()\-\n।]", "", text)
 
+def normalize_bengali_text(text):
+    if not text:
+        return ""
+
+    text = unicodedata.normalize("NFKC", text)
+    text = normalizer.normalize(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    text = (
+        text.replace("।", ". ")
+        .replace("?", "? ")
+        .replace("!", "! ")
+        .replace(",", ", ")
+        .replace(":", ": ")
+        .replace(";", "; ")
+    )
+    text = re.sub(r"\s+", " ", text).strip()
     return text
 
 
-def clean_file(input_path: Path, output_path: Path):
-    """
-    Read raw text file, normalize, and save cleaned version.
-    """
-    print(f"🧹 Cleaning {input_path.name}...")
-
-    raw_text = input_path.read_text(encoding="utf-8")
-    cleaned_text = normalize_bangla_text(raw_text)
-    output_path.write_text(cleaned_text, encoding="utf-8")
-
-    print(f"✅ Cleaned file saved to {output_path}")
+def tokenize_bengali_sentence(sentence):
+    if not sentence:
+        return []
+    return indic_tokenize.trivial_tokenize(sentence, lang="bn")
 
 
-def run_preprocessing(data_dir="app/data/output", output_dir="app/data/processed"):
-    """
-    Process all relevant files in the data directory.
-    """
-    data_path = Path(data_dir)
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
+# === Process Files ===
 
-    file_map = {
-        "narrative.txt": "cleaned_story.txt",
-        "glossary.txt": "cleaned_glossary.txt",
-        "author.txt": "cleaned_author.txt",
-        "lesson_intro.txt": "cleaned_intro.txt",
-        "mcq_ans.txt": "cleaned_knowledge.txt",
-    }
 
-    for filename, out_filename in file_map.items():
-        input_file = data_path / filename
-        output_file = output_path / out_filename
+def process_and_save_file(filename):
+    input_path = os.path.join(INPUT_DIR, filename)
+    output_path = os.path.join(OUTPUT_DIR, f"normalized_{filename}")
 
-        if input_file.exists():
-            clean_file(input_file, output_file)
-        else:
-            print(f"⚠️ File not found: {filename}")
+    print(f"🔄 Processing: {input_path}")
+    content = load_text_file(input_path)
+    if content:
+        normalized = normalize_bengali_text(content)
+        save_text_file(output_path, normalized)
+        print(f"✅ Saved: {output_path}")
 
 
 if __name__ == "__main__":
-    run_preprocessing()
+    # List of your five known files
+    file_list = [
+        "narrative.txt",
+        "glossary.txt",
+        "author.txt",
+        "lesson_intro.txt",
+        "mcq_ans.txt",
+    ]
+
+    for filename in file_list:
+        process_and_save_file(filename)
