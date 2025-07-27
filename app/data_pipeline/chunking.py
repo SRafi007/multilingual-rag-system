@@ -1,85 +1,82 @@
-# chunking.py
-
+from bnltk.tokenize import Tokenizers
 import json
 from pathlib import Path
-import unicodedata
+import re
+
+# Initialize the tokenizer
+bn_tokenizer = Tokenizers()
 
 
-def intelligent_chunk_bangla_text(text, chunk_size=300, overlap=50):
-    """
-    Break Bangla text into semantically coherent chunks using '।' as sentence delimiter.
-    """
-    text = unicodedata.normalize("NFC", text)
-    sentences = [s.strip() for s in text.split("।") if s.strip()]
-    chunks = []
-    current_chunk = []
+def simple_bengali_sentence_split(text):
+    """Simple sentence splitting for Bengali text based on punctuation"""
+    # Bengali sentence ending punctuation marks
+    sentence_endings = r"[।!?।।]+"
+    sentences = re.split(sentence_endings, text)
+    # Clean up and filter empty sentences
+    sentences = [s.strip() for s in sentences if s.strip()]
+    return sentences
 
-    for sentence in sentences:
-        sentence += "।"  # Reattach punctuation
-        joined = "".join(current_chunk + [sentence])
 
-        if len(joined) <= chunk_size:
-            current_chunk.append(sentence)
+def chunk_bengali_text(
+    text: str, source: str, source_type: str, max_sentences_per_chunk=2
+):
+    """Split Bengali text into sentence-based chunks"""
+    try:
+        # Try to use BNLTK tokenizer if it has sentence tokenization
+        if hasattr(bn_tokenizer, "bn_sent_tokenizer"):
+            sentences = bn_tokenizer.bn_sent_tokenizer(text)
+            print("using bn_sent")
+        elif hasattr(bn_tokenizer, "sent_tokenizer"):
+            print("using bn_token")
+            sentences = bn_tokenizer.sent_tokenizer(text)
         else:
-            chunks.append("".join(current_chunk).strip())
-            overlap_sentences = current_chunk[-1:] if overlap else []
-            current_chunk = overlap_sentences + [sentence]
+            # Fallback to simple sentence splitting
+            print("using bn_fall")
+            sentences = simple_bengali_sentence_split(text)
+    except Exception as e:
+        print(f"Error with BNLTK tokenizer: {e}")
+        print("Using simple sentence splitting...")
+        sentences = simple_bengali_sentence_split(text)
 
-    if current_chunk:
-        chunks.append("".join(current_chunk).strip())
+    chunks = []
+    chunk = []
+    chunk_index = 0
+
+    for i, sentence in enumerate(sentences):
+        sentence = sentence.strip()
+        if sentence:  # Only add non-empty sentences
+            chunk.append(sentence)
+
+        if len(chunk) >= max_sentences_per_chunk or i == len(sentences) - 1:
+            if chunk:  # Only create chunk if it has content
+                chunks.append(
+                    {
+                        "text": " ".join(chunk),
+                        "source": source,
+                        "source_type": source_type,
+                        "chunk_index": chunk_index,
+                    }
+                )
+                chunk_index += 1
+                chunk = []  # reset
 
     return chunks
 
 
-def chunk_file(input_path: Path, output_path: Path, source_type: str):
-    print(f"🔪 Chunking: {input_path.name}")
-    text = input_path.read_text(encoding="utf-8")
-    chunks = intelligent_chunk_bangla_text(text)
-
-    output_data = [
-        {
-            "text": chunk,
-            "source": input_path.name,
-            "source_type": source_type,
-            "chunk_index": idx,
-        }
-        for idx, chunk in enumerate(chunks)
-    ]
-
-    with open(output_path, "w", encoding="utf-8") as f:
-        for item in output_data:
-            f.write(json.dumps(item, ensure_ascii=False) + "\n")
-
-    print(f"✅ {len(chunks)} chunks written to: {output_path}")
-
-
-def run_chunking(
-    input_dir="app/data/resolved",
-    cleaned_dir="app/data/processed",
-    output_dir="app/data/chunks",
-):
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-
-    # Each file and its source_type
-    files = {
-        "resolved_story.txt": "story",
-        "cleaned_glossary.txt": "glossary",
-        "cleaned_author.txt": "author",
-        "cleaned_intro.txt": "lesson_intro",
-        "cleaned_knowledge.txt": "knowledge",
-    }
-
-    for filename, source_type in files.items():
-        input_path = (
-            Path(input_dir if "resolved" in filename else cleaned_dir) / filename
-        )
-        output_path = Path(output_dir) / f"{filename.replace('.txt', '')}.jsonl"
-
-        if input_path.exists():
-            chunk_file(input_path, output_path, source_type)
-        else:
-            print(f"⚠️ Skipped: {filename} (not found)")
-
-
+# Example usage
 if __name__ == "__main__":
-    run_chunking()
+    # Example text block (you can read this from a file too)
+    raw_text = """১৭ বছর বয়সে ব্যারিস্টারি পড়তে ইংল্যান্ডে গেলেও কোর্স সম্পন্ন করা সম্ভব হয়নি। তবে গৃহশিক্ষকের কাছ থেকে জ্ঞানার্জনে রবীন্দ্রনাথ ঠাকুরের কোনো ত্রুটি হয়নি। ১৮৮৪ খ্রিস্টাব্দ থেকে রবীন্দ্রনাথ ঠাকুর পিতার আদেশে বিষয়কর্ম পরিদর্শনে নিযুক্ত হন এবং ১৮৯০ খ্রিস্টাব্দ থেকে দেশের বিভিন্ন অঞ্চলে জমিদারি দেখাশুনা করেন। এ সূত্রে রবীন্দ্রনাথ ঠাকুর শিলাইদহ ও সিরাজগঞ্জের শাহজাদপুরে দীর্ঘ সময় অবস্থান করেন।"""
+
+    chunks = chunk_bengali_text(
+        raw_text, source="cleaned_author.txt", source_type="author"
+    )
+
+    # Save to file (optional)
+    with open("output_chunks.jsonl", "w", encoding="utf-8") as f:
+        for chunk in chunks:
+            f.write(json.dumps(chunk, ensure_ascii=False) + "\n")
+
+    # Print for preview
+    for c in chunks:
+        print(json.dumps(c, ensure_ascii=False, indent=2))

@@ -40,8 +40,7 @@ def normalize_bengali_text(text):
     text = normalizer.normalize(text)
     text = re.sub(r"\s+", " ", text).strip()
     text = (
-        text.replace("।", ". ")
-        .replace("?", "? ")
+        text.replace("?", "? ")
         .replace("!", "! ")
         .replace(",", ", ")
         .replace(":", ": ")
