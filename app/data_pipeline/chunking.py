@@ -14,6 +14,42 @@ INPUT_FILES = {
 OUTPUT_FILE = "app/data/chunks/processed_chunks.json"
 TRANSLATE = True  # Set to False if you don’t want English translations
 
+import time
+
+# Example protected terms
+PROTECTED_TERMS = {
+    "অপরিচিতা": "APORICHITA",  # temp placeholder
+    # Add more terms as needed
+}
+
+
+def protect_terms(text):
+    for bn_term, placeholder in PROTECTED_TERMS.items():
+        text = text.replace(bn_term, placeholder)
+    return text
+
+
+def restore_terms(text):
+    for bn_term, placeholder in PROTECTED_TERMS.items():
+        text = text.replace(placeholder, bn_term)
+    return text
+
+
+def safe_translate(sentence, retries=3, delay=1):
+    protected_sentence = protect_terms(sentence)
+
+    for attempt in range(retries):
+        try:
+            translated = GoogleTranslator(source="bn", target="en").translate(
+                protected_sentence
+            )
+            return restore_terms(translated)
+        except Exception as e:
+            print(f"[!] Translation error (attempt {attempt + 1}): {e}")
+            time.sleep(delay)
+
+    return None
+
 
 # --- Utility Functions ---
 def bn_sentence_tokenizer(text):
@@ -54,9 +90,9 @@ def process_file(file_path, section_name, chunk_prefix, translate=False):
                 chunk["text_en"] = None
             else:
                 try:
-                    translated = GoogleTranslator(source="bn", target="en").translate(
-                        sentence
-                    )
+                    translated = safe_translate(sentence)
+                    chunk["text_en"] = translated
+
                     chunk["text_en"] = translated
                 except Exception as e:
                     print(f"[!] Translation failed for {chunk_id}: {e}")
