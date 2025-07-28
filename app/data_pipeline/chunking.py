@@ -1,82 +1,93 @@
-from bnltk.tokenize import Tokenizers
-import json
-from pathlib import Path
+import os
 import re
+import json
+from deep_translator import GoogleTranslator
 
-# Initialize the tokenizer
-bn_tokenizer = Tokenizers()
+# --- Configuration ---
+INPUT_FILES = {
+    "story": "app/data/normalized/resolved_narrative.txt",
+    "glossary": "app/data/normalized/normalized_glossary.txt",
+    "author": "app/data/normalized/normalized_author.txt",
+    "intro": "app/data/normalized/normalized_mcq_ans.txt",
+    "knowledge": "app/data/normalized/normalized_lesson_intro.txt",
+}
+OUTPUT_FILE = "app/data/chunks/processed_chunks.json"
+TRANSLATE = True  # Set to False if you don’t want English translations
 
 
-def simple_bengali_sentence_split(text):
-    """Simple sentence splitting for Bengali text based on punctuation"""
-    # Bengali sentence ending punctuation marks
-    sentence_endings = r"[।!?।।]+"
-    sentences = re.split(sentence_endings, text)
-    # Clean up and filter empty sentences
-    sentences = [s.strip() for s in sentences if s.strip()]
-    return sentences
+# --- Utility Functions ---
+def bn_sentence_tokenizer(text):
+    return [s.strip() for s in re.split(r"(?<=[।!?])\s+", text) if s.strip()]
 
 
-def chunk_bengali_text(
-    text: str, source: str, source_type: str, max_sentences_per_chunk=2
-):
-    """Split Bengali text into sentence-based chunks"""
-    try:
-        # Try to use BNLTK tokenizer if it has sentence tokenization
-        if hasattr(bn_tokenizer, "bn_sent_tokenizer"):
-            sentences = bn_tokenizer.bn_sent_tokenizer(text)
-            print("using bn_sent")
-        elif hasattr(bn_tokenizer, "sent_tokenizer"):
-            print("using bn_token")
-            sentences = bn_tokenizer.sent_tokenizer(text)
-        else:
-            # Fallback to simple sentence splitting
-            print("using bn_fall")
-            sentences = simple_bengali_sentence_split(text)
-    except Exception as e:
-        print(f"Error with BNLTK tokenizer: {e}")
-        print("Using simple sentence splitting...")
-        sentences = simple_bengali_sentence_split(text)
+def process_file(file_path, section_name, chunk_prefix, translate=False):
+    with open(file_path, "r", encoding="utf-8") as f:
+        raw_text = f.read()
 
+    sentences = bn_sentence_tokenizer(raw_text)
     chunks = []
-    chunk = []
-    chunk_index = 0
 
     for i, sentence in enumerate(sentences):
         sentence = sentence.strip()
-        if sentence:  # Only add non-empty sentences
-            chunk.append(sentence)
+        if not sentence:
+            continue
 
-        if len(chunk) >= max_sentences_per_chunk or i == len(sentences) - 1:
-            if chunk:  # Only create chunk if it has content
-                chunks.append(
-                    {
-                        "text": " ".join(chunk),
-                        "source": source,
-                        "source_type": source_type,
-                        "chunk_index": chunk_index,
-                    }
+        chunk_id = f"{chunk_prefix}-{str(i+1).zfill(3)}"
+        chunk = {
+            "chunk_id": chunk_id,
+            "text_bn": sentence,
+            "section": section_name,
+            "source": os.path.basename(file_path),
+            "index": i + 1,
+            "metadata": {
+                "language": "bn",
+                "section": section_name,
+                "translated": translate,
+            },
+        }
+
+        if translate:
+            if len(sentence) > 5000:
+                print(
+                    f"[!] Skipped translation for {chunk_id}: Sentence too long ({len(sentence)} chars)"
                 )
-                chunk_index += 1
-                chunk = []  # reset
+                chunk["text_en"] = None
+            else:
+                try:
+                    translated = GoogleTranslator(source="bn", target="en").translate(
+                        sentence
+                    )
+                    chunk["text_en"] = translated
+                except Exception as e:
+                    print(f"[!] Translation failed for {chunk_id}: {e}")
+                    chunk["text_en"] = None
+
+        chunks.append(chunk)
 
     return chunks
 
 
-# Example usage
-if __name__ == "__main__":
-    # Example text block (you can read this from a file too)
-    raw_text = """১৭ বছর বয়সে ব্যারিস্টারি পড়তে ইংল্যান্ডে গেলেও কোর্স সম্পন্ন করা সম্ভব হয়নি। তবে গৃহশিক্ষকের কাছ থেকে জ্ঞানার্জনে রবীন্দ্রনাথ ঠাকুরের কোনো ত্রুটি হয়নি। ১৮৮৪ খ্রিস্টাব্দ থেকে রবীন্দ্রনাথ ঠাকুর পিতার আদেশে বিষয়কর্ম পরিদর্শনে নিযুক্ত হন এবং ১৮৯০ খ্রিস্টাব্দ থেকে দেশের বিভিন্ন অঞ্চলে জমিদারি দেখাশুনা করেন। এ সূত্রে রবীন্দ্রনাথ ঠাকুর শিলাইদহ ও সিরাজগঞ্জের শাহজাদপুরে দীর্ঘ সময় অবস্থান করেন।"""
+# --- Main Execution ---
+def main():
+    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
+    all_chunks = []
 
-    chunks = chunk_bengali_text(
-        raw_text, source="cleaned_author.txt", source_type="author"
+    for idx, (section, path) in enumerate(INPUT_FILES.items()):
+        if not os.path.exists(path):
+            print(f"[!] File not found: {path}")
+            continue
+        print(f"[+] Processing '{section}' from '{path}'...")
+        prefix = section.upper()[:3]
+        section_chunks = process_file(path, section, prefix, translate=TRANSLATE)
+        all_chunks.extend(section_chunks)
+
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+        json.dump(all_chunks, f, ensure_ascii=False, indent=2)
+
+    print(
+        f"\n✅ Processing complete. Saved {len(all_chunks)} chunks to '{OUTPUT_FILE}'"
     )
 
-    # Save to file (optional)
-    with open("output_chunks.jsonl", "w", encoding="utf-8") as f:
-        for chunk in chunks:
-            f.write(json.dumps(chunk, ensure_ascii=False) + "\n")
 
-    # Print for preview
-    for c in chunks:
-        print(json.dumps(c, ensure_ascii=False, indent=2))
+if __name__ == "__main__":
+    main()
