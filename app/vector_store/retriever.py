@@ -1,41 +1,33 @@
-# retriever.py
-
-import json
-from pathlib import Path
-import faiss
-import numpy as np
 from sentence_transformers import SentenceTransformer
+import chromadb
+
+# --- Config ---
+DB_DIR = "app/data/chroma_db"
+COLLECTION_NAME = "multilingual_story_chunks"
+EMBED_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+# Initialize
+print("[+] Loading ChromaDB and model...")
+client = chromadb.PersistentClient(path=DB_DIR)
+collection = client.get_collection(name=COLLECTION_NAME)
+embedder = SentenceTransformer(EMBED_MODEL)
 
 
-class Retriever:
-    def __init__(
-        self,
-        index_path="app/data/faiss_index/index.faiss",
-        meta_path="app/data/faiss_index/metadata.jsonl",
-    ):
-        self.index_path = Path(index_path)
-        self.meta_path = Path(meta_path)
-        self.model = SentenceTransformer("sentence-transformers/LaBSE")
+def search(query, top_k=5):
+    query_embedding = embedder.encode(query).tolist()
 
-        print("📦 Loading FAISS index...")
-        self.index = faiss.read_index(str(self.index_path))
+    results = collection.query(query_embeddings=[query_embedding], n_results=top_k)
 
-        print("📚 Loading metadata...")
-        self.metadata = self._load_metadata()
+    print(f"\n🔍 Results for: '{query}'\n")
+    for i in range(top_k):
+        print(f"[{i+1}] Score: {results['distances'][0][i]:.4f}")
+        print(f"    BN: {results['metadatas'][0][i]['text_bn']}")
+        print(f"    EN: {results['documents'][0][i]}")
+        print(f"    Source: {results['metadatas'][0][i]['source']}")
+        print(f"    Section: {results['metadatas'][0][i]['section']}")
+        print()
 
-    def _load_metadata(self):
-        with open(self.meta_path, "r", encoding="utf-8") as f:
-            return [json.loads(line.strip()) for line in f]
 
-    def search(self, query, top_k=5):
-        print(f"🔍 Searching for: {query}")
-        embedding = self.model.encode(
-            [query], convert_to_numpy=True, normalize_embeddings=True
-        )
-        D, I = self.index.search(embedding, top_k)
-
-        results = []
-        for idx in I[0]:
-            if idx < len(self.metadata):
-                results.append(self.metadata[idx])
-        return results
+# Example usage:
+if __name__ == "__main__":
+    search("Who is Anupam?")
